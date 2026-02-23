@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+
+.env
+data/raw/
+data/signals/
+data/runs/
+
+logs/
+node_modules/
+dist/
