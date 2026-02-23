@@ -8,6 +8,6 @@ def health():
     return {"status": "ok"}
 @app.get("/")
 def root():
-    return JSONResponse(content={"message": "Agent2 backend running"})
+    return JSONResponse(content={"message": "Agent2 backend running successfully"})
 
 
