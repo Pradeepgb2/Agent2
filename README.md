@@ -1,1 +1,1 @@
-BasiSetup and Configuration is  completed .   
+BasiSetup and Configuration is completed .   
