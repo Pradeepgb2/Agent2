@@ -1,1 +1,1 @@
-BasiSetup and Configuration is completed .   
+BasiSetup and Configuration is completed and ci.yml is setup.   
