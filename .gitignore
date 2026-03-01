@@ -3,10 +3,10 @@ __pycache__/
 *.pyc
 
 .env
-data/raw/
-data/signals/
-data/runs/
+data/raw/**
+data/signals/**
+data/runs/**
 
-logs/
+logs/**
 node_modules/
 dist/
