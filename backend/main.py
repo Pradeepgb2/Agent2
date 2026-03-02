@@ -57,7 +57,7 @@ def health():
 
 @app.get("/")
 def root():
-    return JSONResponse(content={"message": "Agent2 backend running"})
+    return JSONResponse(content={"message": "Agent2 backend running successfully"})
 
 
 def _get_available_weeks() -> list[str]:
