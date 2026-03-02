@@ -6,7 +6,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from worker.ingest import run_ingestion
 from worker.compare import run_comparison
-
+import re
+from typing import List, Tuple
 load_dotenv()
 
 RAW_PATH = os.getenv("DATA_RAW_PATH", "./data/raw")
@@ -25,6 +26,39 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
+DATE_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+def _extract_date(filename: str):
+    m = DATE_PATTERN.search(filename)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y-%m-%d")
+    except ValueError:
+        return None
+
+def enforce_retention(folder: str, prefix: str, keep_count: int):
+    p = Path(folder)
+    if not p.exists():
+        return
+
+    dated = []
+    for f in p.glob(f"{prefix}*"):
+        if f.is_file():
+            d = _extract_date(f.name)
+            if d:
+                dated.append((f, d))
+
+    dated.sort(key=lambda x: x[1], reverse=True)
+    to_delete = dated[keep_count:]
+
+    for f, _ in to_delete:
+        try:
+            f.unlink()
+            logging.info(f"Retention deleted: {f}")
+        except Exception as e:
+            logging.warning(f"Retention failed deleting {f}: {e}")
+            
 def run():
     start_time = datetime.now()
     logging.info("Pipeline started")
@@ -116,6 +150,14 @@ def run():
             "duration_seconds": duration_seconds,
             "error_message": error_message,
         }
+        # Raw: keep 5 weeks
+        enforce_retention(RAW_PATH, "employees_linkedin_data_", keep_count=5)
+
+        # Signals: keep 8 weeks
+        enforce_retention(SIGNALS_PATH, "employee_changes_report_", keep_count=8)
+
+        # Run summaries: keep 8 weeks
+        enforce_retention(RUNS_PATH, "run_summary_", keep_count=8)
 
         summary_path = write_run_summary(run_summary, RUNS_PATH)
         logging.info(f"Run summary written to: {summary_path}")
