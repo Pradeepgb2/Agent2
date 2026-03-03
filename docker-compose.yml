@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build:
@@ -22,4 +20,5 @@ services:
       - ./logs:/logs
     env_file:
       - .env.docker
+    profiles: ["manual"]
     command: ["python", "-m", "worker.run_pipeline"]
