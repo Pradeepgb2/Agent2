@@ -6,26 +6,26 @@ from pathlib import Path
 
 load_dotenv()
 
-# ✅ Set env vars BEFORE importing kaggle
-api_key = os.getenv("API_KEY")
-if not api_key:
-    raise ValueError("API_KEY not found in environment variables")
-
-os.environ["KAGGLE_KEY"] = api_key
-os.environ["KAGGLE_USERNAME"] = os.getenv("KAGGLE_USERNAME", "pradeepgubbala")
-
-import kaggle  # ✅ import after env vars are set
 
 
 def run_ingestion():
+    # Set env vars BEFORE importing kaggle
+    api_key = os.getenv("API_KEY")
+    if not api_key:
+        raise ValueError("API_KEY not found in environment variables")
+
+    os.environ["KAGGLE_KEY"] = api_key
+    os.environ["KAGGLE_USERNAME"] = os.getenv("KAGGLE_USERNAME", "pradeepgubbala")
+
+    import kaggle  # import after env vars are set
+
     """
     Downloads latest dataset from Kaggle
     Renames it with today's date
     Returns ingestion metadata
     """
 
-    base_dir = Path(__file__).resolve().parents[1]
-    raw_dir = base_dir / "data" / "raw"
+    raw_dir = Path(os.getenv("DATA_RAW_PATH", "/data/raw"))
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     dataset = "pradeepgubbala/employees-data"
