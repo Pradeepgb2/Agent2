@@ -8,13 +8,17 @@ from worker.ingest import run_ingestion
 from worker.compare import run_comparison
 import re
 from typing import List, Tuple
-load_dotenv()
+# Load .env only for local runs (optional in Docker)
+if Path(".env").exists():
+    load_dotenv()
 
-RAW_PATH = os.getenv("DATA_RAW_PATH", "./data/raw")
-SIGNALS_PATH = os.getenv("DATA_SIGNALS_PATH", "./data/signals")
-RUNS_PATH = os.getenv("DATA_RUNS_PATH", "./data/runs")
-LOG_PATH = os.getenv("LOG_PATH", "./logs")
+DATA_ROOT = os.getenv("DATA_ROOT", "./data")
+LOG_ROOT = os.getenv("LOG_ROOT", "./logs")
 
+RAW_PATH = os.getenv("DATA_RAW_PATH", str(Path(DATA_ROOT) / "raw"))
+SIGNALS_PATH = os.getenv("DATA_SIGNALS_PATH", str(Path(DATA_ROOT) / "signals"))
+RUNS_PATH = os.getenv("DATA_RUNS_PATH", str(Path(DATA_ROOT) / "runs"))
+LOG_PATH = os.getenv("LOG_PATH", LOG_ROOT)
 os.makedirs(RAW_PATH, exist_ok=True)
 os.makedirs(SIGNALS_PATH, exist_ok=True)
 os.makedirs(RUNS_PATH, exist_ok=True)
@@ -60,6 +64,11 @@ def enforce_retention(folder: str, prefix: str, keep_count: int):
             logging.warning(f"Retention failed deleting {f}: {e}")
             
 def run():
+    print("Using paths:")
+    print(" RAW_PATH:", RAW_PATH)
+    print(" SIGNALS_PATH:", SIGNALS_PATH)
+    print(" RUNS_PATH:", RUNS_PATH)
+    print(" LOG_PATH:", LOG_PATH)
     start_time = datetime.now()
     logging.info("Pipeline started")
     print("Pipeline started")
