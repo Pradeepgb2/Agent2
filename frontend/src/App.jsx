@@ -268,9 +268,6 @@ export default function App() {
       {/* Table Header */}
       <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div><b>Total:</b> {total}</div>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
-          Click an email to copy
-        </div>
       </div>
 
       {/* Table */}
