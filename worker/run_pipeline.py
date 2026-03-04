@@ -124,10 +124,10 @@ def run():
 
         # Row counts (you’ll fill these properly once ingestion returns them)
         # For now, store placeholders or 0
-        total_rows_fetched = 0
-        valid_rows_processed = 0
-        invalid_rows_skipped = 0
-        skipped_reason_counts = {}
+        total_rows_fetched = comparison_result.get("total_rows_fetched", 0)
+        valid_rows_processed = comparison_result.get("valid_rows_processed", 0)
+        invalid_rows_skipped = comparison_result.get("invalid_rows_skipped", 0)
+        skipped_reason_counts = comparison_result.get("skipped_reason_counts", {})
 
         # If you later return these from ingestion/compare, plug them here.
         # Example:

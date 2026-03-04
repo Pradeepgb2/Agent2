@@ -76,6 +76,21 @@ def run_comparison():
     # ROW VALIDATION (SKIP INVALID ROWS)
     # -------------------------
     REQUIRED_COLS = ["email_id", "name", "role", "company_name", "company_location"]
+    # total rows fetched
+    total_rows_fetched = len(new_df)
+
+    # find invalid rows (missing required values)
+    invalid_mask = new_df[REQUIRED_COLS].isna().any(axis=1)
+
+    invalid_rows_skipped = int(invalid_mask.sum())
+
+    # keep only valid rows
+    new_df = new_df[~invalid_mask]
+
+    valid_rows_processed = len(new_df)
+    skipped_reason_counts = {
+        "missing_required_fields": invalid_rows_skipped
+    }
 
     def normalize_missing(df: pd.DataFrame) -> pd.DataFrame:
         # Convert empty/whitespace strings to <NA> for required cols
@@ -219,4 +234,8 @@ def run_comparison():
         "role_change_count": role_change_count,
         "role_and_company_change_count": both_change_count,
         "output_path": str(output_path),
+        "total_rows_fetched": total_rows_fetched,
+        "valid_rows_processed": valid_rows_processed,
+        "invalid_rows_skipped": invalid_rows_skipped,
+        "skipped_reason_counts": skipped_reason_counts,
     }
