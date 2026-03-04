@@ -263,9 +263,6 @@ export default function App() {
             </span>
           )}
         </div>
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-          Tip: Type your filters, then click <b>Apply</b> (prevents API calls on every keypress).
-        </div>
       </div>
 
       {/* Table Header */}
