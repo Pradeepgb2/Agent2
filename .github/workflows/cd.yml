@@ -21,9 +21,22 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.EC2_APP_DIR }}
+
+            echo "Pulling latest code..."
             git fetch --all
             git reset --hard origin/main
 
+            echo "Rebuilding worker image (no cache) to avoid stale code..."
+            docker compose build --no-cache worker
+
+            echo "Rebuilding + starting services..."
             docker compose up -d --build
 
+            echo "Containers:"
             docker ps
+
+            echo "Health check:"
+            curl -fsS http://localhost:8000/health || (docker compose logs --tail=200 api && exit 1)
+
+            echo "Cleanup old images (safe for free tier disk):"
+            docker image prune -f
