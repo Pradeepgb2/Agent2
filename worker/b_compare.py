@@ -10,11 +10,7 @@ from dotenv import load_dotenv
 
 def extract_company_details(value):
     """
-    Extract company name and link from current_company JSON-like column.
-
-    Example:
-    {"link":"https://www.linkedin.com/company/us-bank?trk=...","name":"U.S. Bank","company_id":"us-bank","location":null}
-
+    Extract company name and company link from current_company JSON-like field.
     Returns:
         (company_name, company_url)
     """
@@ -44,8 +40,9 @@ def extract_company_details(value):
 
 def normalize_missing(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     for c in cols:
-        df[c] = df[c].astype("string").str.strip()
-        df.loc[df[c].isin(["", "none", "null", "nan", "None", "<NA>"]), c] = pd.NA
+        if c in df.columns:
+            df[c] = df[c].astype("string").str.strip()
+            df.loc[df[c].isin(["", "none", "null", "nan", "None", "<NA>"]), c] = pd.NA
     return df
 
 
@@ -65,7 +62,106 @@ def extract_week_label(filename: str) -> str:
     return extract_date_from_filename(filename).strftime("%Y-%m-%d")
 
 
+def clean_headers(columns):
+    cleaned = []
+    for c in columns:
+        c = str(c)
+        c = c.replace("\ufeff", "")   # BOM
+        c = c.replace("\u200b", "")   # zero-width space
+        c = c.replace("\xa0", " ")    # non-breaking space
+        c = c.strip()
+        c = c.strip('"').strip("'")
+        cleaned.append(c)
+    return cleaned
+
+
+def pick_first_existing(df: pd.DataFrame, candidates: list[str], required: bool = True):
+    for col in candidates:
+        if col in df.columns:
+            return col
+    if required:
+        raise KeyError(f"None of these columns were found: {candidates}")
+    return None
+
+
+def load_profile_csv(file_path: Path) -> pd.DataFrame:
+    """
+    Robust CSV loader:
+    - handles encoding issues
+    - handles delimiter auto-detection
+    - handles header cleanup
+    - supports id / Aid
+    """
+    encodings_to_try = ["utf-8-sig", "cp1252", "latin-1"]
+    last_error = None
+    df = None
+
+    for enc in encodings_to_try:
+        try:
+            with open(file_path, "r", encoding=enc, errors="strict") as f:
+                first_line = f.readline()
+                print(f"\n[DEBUG] Reading file: {file_path}")
+                print(f"[DEBUG] Using encoding: {enc}")
+                print("[DEBUG] First line repr:", repr(first_line))
+
+            df = pd.read_csv(
+                file_path,
+                dtype="string",
+                sep=None,
+                engine="python",
+                encoding=enc,
+            )
+            print(f"[DEBUG] Successfully loaded CSV with encoding: {enc}")
+            break
+        except Exception as e:
+            print(f"[DEBUG] Failed with encoding {enc}: {e}")
+            last_error = e
+
+    if df is None:
+        raise ValueError(f"Could not read CSV file {file_path}. Last error: {last_error}")
+
+    print("[DEBUG] Raw columns:", df.columns.tolist())
+    print("[DEBUG] Raw repr columns:", [repr(c) for c in df.columns])
+
+    df.columns = clean_headers(df.columns)
+
+    print("[DEBUG] Cleaned columns:", df.columns.tolist())
+    print("[DEBUG] Cleaned repr columns:", [repr(c) for c in df.columns])
+
+    id_col = pick_first_existing(df, ["id", "Id", "ID", "Aid", "aid"])
+    name_col = pick_first_existing(df, ["name", "Name"])
+    city_col = pick_first_existing(df, ["city", "City", "location", "Location"], required=False)
+    current_company_col = pick_first_existing(
+        df,
+        ["current_company", "Current_company", "currentCompany"]
+    )
+
+    selected = pd.DataFrame({
+        "id": df[id_col],
+        "name": df[name_col],
+        "city": df[city_col] if city_col else pd.Series([pd.NA] * len(df), dtype="string"),
+        "current_company": df[current_company_col],
+    })
+
+    return selected
+
+
 def run_comparison():
+    """
+    Compare the two most recent datasets and detect company changes only.
+
+    Extracts from current_company:
+    - company_name
+    - company_url
+
+    Report displays:
+    - Name
+    - Past Company URL
+    - Past Company
+    - New Company
+    - Company (City)
+    - Status
+    """
     load_dotenv()
 
     RAW_DIR = Path(os.getenv("DATA_RAW_PATH", "/data/raw"))
@@ -99,14 +195,8 @@ def run_comparison():
     new_file = files_with_dates[0][0]
     prev_file = files_with_dates[1][0]
 
-    # 0=id, 1=name, 2=city, 7=current_company
-    USECOLS = [0, 1, 2, 7]
-
-    old_df = pd.read_csv(prev_file, usecols=USECOLS, dtype="string", engine="c")
-    new_df = pd.read_csv(new_file, usecols=USECOLS, dtype="string", engine="c")
-
-    old_df.columns = ["id", "name", "city", "current_company"]
-    new_df.columns = ["id", "name", "city", "current_company"]
+    old_df = load_profile_csv(prev_file)
+    new_df = load_profile_csv(new_file)
 
     for df in (old_df, new_df):
         df["id"] = df["id"].astype("string").str.strip().str.lower()
@@ -117,12 +207,13 @@ def run_comparison():
         df["company_name"] = extracted.apply(lambda x: x[0])
         df["company_url"] = extracted.apply(lambda x: x[1])
 
-    REQUIRED_COLS = ["id", "name", "city", "company_name"]
+    REQUIRED_COLS = ["id", "name", "company_name"]
+    OPTIONAL_COLS = ["city", "company_url"]
 
     total_rows_fetched = len(new_df)
 
-    old_df = normalize_missing(old_df, REQUIRED_COLS + ["company_url"])
-    new_df = normalize_missing(new_df, REQUIRED_COLS + ["company_url"])
+    old_df = normalize_missing(old_df, REQUIRED_COLS + OPTIONAL_COLS)
+    new_df = normalize_missing(new_df, REQUIRED_COLS + OPTIONAL_COLS)
 
     old_before = len(old_df)
     new_before = len(new_df)
@@ -159,6 +250,7 @@ def run_comparison():
     changed_rows["week_present"] = week_present
     changed_rows["week_past"] = week_past
     changed_rows["detected_at"] = datetime.now().isoformat(timespec="seconds")
+    changed_rows["Status"] = "company changed"
 
     signals_df = changed_rows[
         [
@@ -188,7 +280,6 @@ def run_comparison():
     signals_output_path = SIGNALS_DIR / signals_output_filename
     signals_df.to_csv(signals_output_path, index=False)
 
-    changed_rows["Status"] = "company changed"
     changed_rows["Company (City)"] = (
         changed_rows["company_name_old"].fillna("Unknown")
         + " ("
