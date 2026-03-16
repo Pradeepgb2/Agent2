@@ -1,107 +1,128 @@
 from pathlib import Path
 from datetime import datetime
 import re
+import json
+import ast
 import pandas as pd
 import os
 from dotenv import load_dotenv
 
-def run_comparison():
+
+def extract_company_details(value):
     """
-    Compares the two most recent weekly datasets stored in data/raw/
-    and generates a signals report in data/signals/employee_changes_report_YYYY_MM_DD.csv
+    Extract company name and link from current_company JSON-like column.
+
+    Example:
+    {"link":"https://www.linkedin.com/company/us-bank?trk=...","name":"U.S. Bank","company_id":"us-bank","location":null}
 
     Returns:
-        dict: comparison metadata (files used, counts, output path)
+        (company_name, company_url)
     """
-    # -------------------------
-    # PATH SETUP (ENV-BASED)
-    # -------------------------
+    if pd.isna(value):
+        return pd.NA, pd.NA
+
+    value = str(value).strip()
+    if not value:
+        return pd.NA, pd.NA
+
+    try:
+        obj = json.loads(value)
+        if isinstance(obj, dict):
+            return obj.get("name", pd.NA), obj.get("link", pd.NA)
+    except Exception:
+        pass
+
+    try:
+        obj = ast.literal_eval(value)
+        if isinstance(obj, dict):
+            return obj.get("name", pd.NA), obj.get("link", pd.NA)
+    except Exception:
+        pass
+
+    return pd.NA, pd.NA
+
+
+def normalize_missing(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    for c in cols:
+        df[c] = df[c].astype("string").str.strip()
+        df.loc[df[c].isin(["", "none", "null", "nan", "None", "<NA>"]), c] = pd.NA
+    return df
+
+
+def extract_date_from_filename(filename: str) -> datetime:
+    match_dash = re.search(r"(\d{4}-\d{2}-\d{2})", filename)
+    if match_dash:
+        return datetime.strptime(match_dash.group(1), "%Y-%m-%d")
+
+    match_underscore = re.search(r"(\d{4}_\d{2}_\d{2})", filename)
+    if match_underscore:
+        return datetime.strptime(match_underscore.group(1), "%Y_%m_%d")
+
+    raise ValueError(f"Could not extract date from filename: {filename}")
+
+
+def extract_week_label(filename: str) -> str:
+    return extract_date_from_filename(filename).strftime("%Y-%m-%d")
+
+
+def run_comparison():
     load_dotenv()
 
-    RAW_DIR = Path(os.getenv("DATA_RAW_PATH", "./data/raw"))
-    SIGNALS_DIR = Path(os.getenv("DATA_SIGNALS_PATH", "./data/signals"))
+    RAW_DIR = Path(os.getenv("DATA_RAW_PATH", "/data/raw"))
+    SIGNALS_DIR = Path(os.getenv("DATA_SIGNALS_PATH", "/data/signals"))
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     SIGNALS_DIR.mkdir(parents=True, exist_ok=True)
-    # -------------------------
-    # IDENTIFY TWO MOST RECENT DATASETS
-    # -------------------------
+
     DATASET_PREFIX = "employees_linkedin_data_"
-    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2})")
     files_with_dates = []
 
     for file in RAW_DIR.glob(f"{DATASET_PREFIX}*.csv"):
-        match = date_pattern.search(file.name)
-        if match:
-            file_date = datetime.strptime(match.group(1), "%Y-%m-%d")
+        try:
+            file_date = extract_date_from_filename(file.name)
             files_with_dates.append((file, file_date))
+        except ValueError:
+            continue
 
     files_with_dates.sort(key=lambda x: x[1], reverse=True)
 
     if not files_with_dates:
         raise FileNotFoundError(
-            f"No files found in {RAW_DIR} matching {DATASET_PREFIX}YYYY-MM-DD.csv"
+            f"No valid files found in {RAW_DIR} matching {DATASET_PREFIX}*.csv"
         )
 
     if len(files_with_dates) < 2:
-        new_file = files_with_dates[0][0]
-        prev_file = files_with_dates[0][0]
-    else:
-        new_file = files_with_dates[0][0]
-        prev_file = files_with_dates[1][0]
+        raise FileNotFoundError(
+            f"Need at least 2 valid files in {RAW_DIR} to compare, but found only 1."
+        )
 
-    # -------------------------
-    # LOAD CSVs (FAST)
-    # -------------------------
-    USECOLS = [0, 1, 2, 23, 3]  # only first 5 columns
-    DTYPES = {0: "string", 1: "string", 2: "string", 3: "string", 4: "string"}
+    new_file = files_with_dates[0][0]
+    prev_file = files_with_dates[1][0]
 
-    old_df = pd.read_csv(prev_file, usecols=USECOLS, dtype=DTYPES, engine="c")
-    new_df = pd.read_csv(new_file, usecols=USECOLS, dtype=DTYPES, engine="c")
+    # 0=id, 1=name, 2=city, 7=current_company
+    USECOLS = [0, 1, 2, 7]
 
-    old_df.columns = ["email_id", "name", "role", "company_location", "company_name"]
-    new_df.columns = ["email_id", "name", "role", "company_location", "company_name"]
-    print(old_df.head())
-    print(new_df.head())
-    # -------------------------
-    # CLEAN DATA (VECTORIZED)
-    # -------------------------
+    old_df = pd.read_csv(prev_file, usecols=USECOLS, dtype="string", engine="c")
+    new_df = pd.read_csv(new_file, usecols=USECOLS, dtype="string", engine="c")
+
+    old_df.columns = ["id", "name", "city", "current_company"]
+    new_df.columns = ["id", "name", "city", "current_company"]
+
     for df in (old_df, new_df):
-        df["email_id"] = df["email_id"].str.strip().str.lower()
-        df["role"] = df["role"].str.strip()
-        df["company_name"] = df["company_name"].str.strip()
-        df["company_location"] = df["company_location"].str.strip().fillna("")
+        df["id"] = df["id"].astype("string").str.strip().str.lower()
+        df["name"] = df["name"].astype("string").str.strip()
+        df["city"] = df["city"].astype("string").str.strip()
 
-    # -------------------------
-    # ROW VALIDATION (SKIP INVALID ROWS)
-    # -------------------------
-    REQUIRED_COLS = ["email_id", "name", "role", "company_name", "company_location"]
-    # total rows fetched
+        extracted = df["current_company"].apply(extract_company_details)
+        df["company_name"] = extracted.apply(lambda x: x[0])
+        df["company_url"] = extracted.apply(lambda x: x[1])
+
+    REQUIRED_COLS = ["id", "name", "city", "company_name"]
+
     total_rows_fetched = len(new_df)
 
-    # find invalid rows (missing required values)
-    invalid_mask = new_df[REQUIRED_COLS].isna().any(axis=1)
-
-    invalid_rows_skipped = int(invalid_mask.sum())
-
-    # keep only valid rows
-    new_df = new_df[~invalid_mask]
-
-    valid_rows_processed = len(new_df)
-    skipped_reason_counts = {
-        "missing_required_fields": invalid_rows_skipped
-    }
-
-    def normalize_missing(df: pd.DataFrame) -> pd.DataFrame:
-        # Convert empty/whitespace strings to <NA> for required cols
-        for c in REQUIRED_COLS:
-            df[c] = df[c].astype("string")
-            df[c] = df[c].str.strip()
-            df.loc[df[c].isin(["", "none", "null", "nan"]), c] = pd.NA
-        return df
-
-    old_df = normalize_missing(old_df)
-    new_df = normalize_missing(new_df)
+    old_df = normalize_missing(old_df, REQUIRED_COLS + ["company_url"])
+    new_df = normalize_missing(new_df, REQUIRED_COLS + ["company_url"])
 
     old_before = len(old_df)
     new_before = len(new_df)
@@ -112,116 +133,96 @@ def run_comparison():
     old_skipped = old_before - len(old_df_valid)
     new_skipped = new_before - len(new_df_valid)
 
-    # Optional: log counts (or return these counts in metadata)
-    # print(f"Old skipped: {old_skipped}, New skipped: {new_skipped}")
-
     old_df = old_df_valid
     new_df = new_df_valid
 
-    # -------------------------
-    # MERGE ONLY NEEDED COLUMNS
-    # -------------------------
-    merged = old_df[["email_id", "name", "role", "company_name", "company_location"]].merge(
-        new_df[["email_id", "role", "company_name"]],
-        on="email_id",
+    valid_rows_processed = len(new_df)
+    invalid_rows_skipped = new_skipped
+    skipped_reason_counts = {
+        "missing_required_fields": invalid_rows_skipped
+    }
+
+    merged = old_df[["id", "name", "city", "company_name", "company_url"]].merge(
+        new_df[["id", "company_name", "company_url"]],
+        on="id",
         how="inner",
         suffixes=("_old", "_new"),
     )
 
-    # -------------------------
-    # FILTER CHANGED ROWS (SAFE + VECTORIZED)
-    # -------------------------
     company_changed = merged["company_name_old"] != merged["company_name_new"]
-    role_changed = merged["role_old"] != merged["role_new"]
+    changed_rows = merged.loc[company_changed].copy()
 
-    changed_rows = merged.loc[company_changed | role_changed].copy()
+    week_present = extract_week_label(new_file.name)
+    week_past = extract_week_label(prev_file.name)
 
-    # Recompute masks on changed_rows (prevents index misalignment)
-    company_changed_cr = changed_rows["company_name_old"] != changed_rows["company_name_new"]
-    role_changed_cr = changed_rows["role_old"] != changed_rows["role_new"]
-
-    # -------------------------
-    # SIGNAL TYPE (PROFESSIONAL)
-    # -------------------------
-    changed_rows["signal_type"] = "role_change"
-    changed_rows.loc[company_changed_cr, "signal_type"] = "company_change"
-    changed_rows.loc[role_changed_cr & company_changed_cr, "signal_type"] = "role_and_company_change"
-
-    # -------------------------
-    # BUILD SIGNALS OUTPUT (PAST + NEW VALUES)
-    # -------------------------
-    week_present = date_pattern.search(new_file.name).group(1)  # YYYY-MM-DD from filename
-    week_past = date_pattern.search(prev_file.name).group(1)    # YYYY-MM-DD from filename
-
+    changed_rows["signal_type"] = "company_change"
     changed_rows["week_present"] = week_present
     changed_rows["week_past"] = week_past
     changed_rows["detected_at"] = datetime.now().isoformat(timespec="seconds")
 
-    signals_df = changed_rows[[
-        "signal_type",
-        "email_id",
-        "name",
-        "role_old", "role_new",
-        "company_name_old", "company_name_new",
-        "company_location",
-        "week_past", "week_present",
-        "detected_at"
-    ]].rename(columns={
-        "role_old": "past_role",
-        "role_new": "new_role",
-        "company_name_old": "past_company",
-        "company_name_new": "new_company",
-        "company_location": "past_company_location",  # keep simple in v0.1
-    })
+    signals_df = changed_rows[
+        [
+            "signal_type",
+            "id",
+            "name",
+            "company_name_old",
+            "company_url_old",
+            "company_name_new",
+            "company_url_new",
+            "city",
+            "week_past",
+            "week_present",
+            "detected_at",
+        ]
+    ].rename(
+        columns={
+            "id": "linkedin_id",
+            "company_name_old": "past_company",
+            "company_url_old": "past_company_url",
+            "company_name_new": "new_company",
+            "company_url_new": "new_company_url",
+        }
+    )
 
-    # If you want new location too later, you must merge company_location_new as well.
+    signals_output_filename = f"signals_{week_present}.csv"
+    signals_output_path = SIGNALS_DIR / signals_output_filename
+    signals_df.to_csv(signals_output_path, index=False)
 
-    # -------------------------
-    # OUTPUT FILE (signals_YYYY-MM-DD.csv)
-    # -------------------------
-    output_filename = f"signals_{week_present}.csv"
-    output_path = SIGNALS_DIR / output_filename
-
-    signals_df.to_csv(output_path, index=False)
-
-    # -------------------------
-    # STATUS (handles both changes)
-    # -------------------------
-    changed_rows["Status"] = ""
-    changed_rows.loc[role_changed, "Status"] = "role changed"
-    changed_rows.loc[company_changed, "Status"] = "company changed"
-    changed_rows.loc[role_changed & company_changed, "Status"] = "role and company changed"
-
-    # -------------------------
-    # FINAL REPORT
-    # -------------------------
-    changed_rows["Company (Location)"] = (
-        changed_rows["company_name_old"]
+    changed_rows["Status"] = "company changed"
+    changed_rows["Company (City)"] = (
+        changed_rows["company_name_old"].fillna("Unknown")
         + " ("
-        + changed_rows["company_location"].replace("", "Unknown")
+        + changed_rows["city"].fillna("Unknown")
         + ")"
     )
 
     report_df = (
-        changed_rows[["email_id", "Company (Location)", "role_old", "Status"]]
-        .rename(columns={"email_id": "Email", "role_old": "Position"})
+        changed_rows[
+            [
+                "name",
+                "company_url_old",
+                "company_name_old",
+                "company_name_new",
+                "Company (City)",
+                "Status",
+            ]
+        ]
+        .rename(
+            columns={
+                "name": "Name",
+                "company_url_old": "Past Company URL",
+                "company_name_old": "Past Company",
+                "company_name_new": "New Company",
+            }
+        )
         .reset_index(drop=True)
     )
 
-    report_df.index += 1
+    report_output_filename = f"employee_changes_report_{datetime.now().strftime('%Y-%m-%d')}.csv"
+    report_output_path = SIGNALS_DIR / report_output_filename
+    report_df.to_csv(report_output_path, index=False)
 
-    # -------------------------
-    # OUTPUT FILE WITH DATE: employee_changes_report_YYYY_MM_DD.csv
-    # -------------------------
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    output_filename = f"employee_changes_report_{today_str}.csv"
-    output_path = SIGNALS_DIR / output_filename
-
-    report_df.to_csv(output_path, index=False)
-
-    company_change_count = int((signals_df["signal_type"] == "company_change").sum())
-    role_change_count = int((signals_df["signal_type"] == "role_change").sum())
-    both_change_count = int((signals_df["signal_type"] == "role_and_company_change").sum())
+    company_change_count = int(len(signals_df))
 
     return {
         "status": "success",
@@ -229,16 +230,18 @@ def run_comparison():
         "prev_file": str(prev_file),
         "week_present": week_present,
         "week_past": week_past,
-        "signals_count": int(len(signals_df)),
+        "signals_count": company_change_count,
         "company_change_count": company_change_count,
-        "role_change_count": role_change_count,
-        "role_and_company_change_count": both_change_count,
-        "output_path": str(output_path),
+        "signals_output_path": str(signals_output_path),
+        "report_output_path": str(report_output_path),
         "total_rows_fetched": total_rows_fetched,
         "valid_rows_processed": valid_rows_processed,
         "invalid_rows_skipped": invalid_rows_skipped,
         "skipped_reason_counts": skipped_reason_counts,
+        "old_rows_skipped": old_skipped,
+        "new_rows_skipped": new_skipped,
     }
+
 
 if __name__ == "__main__":
     print(run_comparison())

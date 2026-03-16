@@ -61,4 +61,6 @@ def run_ingestion():
 
 
 if __name__ == "__main__":
+    print("BRIGHTDATA_API exists:", bool(API_TOKEN))
+    print("BRIGHTDATA_DATASET_ID exists:", bool(DATASET_ID))
     print(run_ingestion())

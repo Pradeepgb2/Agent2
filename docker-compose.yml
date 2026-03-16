@@ -21,4 +21,4 @@ services:
     env_file:
       - .env.docker
     profiles: ["manual"]
-    command: ["python", "-m", "worker.run_pipeline"]
+    command: ["python", "-m", "worker.b_run_pipeline"]

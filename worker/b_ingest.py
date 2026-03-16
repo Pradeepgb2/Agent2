@@ -7,7 +7,7 @@ import requests
 import time
 load_dotenv()
 input_dir = Path(os.getenv("BD_INPUT_PATH", "/data/input"))
-raw_dir = Path(os.getenv("BD_RAW_PATH", "./data/raw"))
+raw_dir = Path(os.getenv("BD_RAW_PATH", "/data/raw"))
 raw_dir.mkdir(parents=True, exist_ok=True)
 # ================== CONFIGURATION ==================
 

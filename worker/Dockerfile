@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY worker ./worker
 
-CMD ["python", "worker/run_pipeline.py"]
+CMD ["python", "worker/b_run_pipeline.py"]

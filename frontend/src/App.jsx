@@ -14,27 +14,21 @@ export default function App() {
   const [signals, setSignals] = useState([]);
   const [total, setTotal] = useState(0);
 
-  // Filters (editable inputs)
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
-  const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
-  const [location, setLocation] = useState("");
+  const [city, setCity] = useState("");
 
-  // Applied filters snapshot (what API uses)
   const [applied, setApplied] = useState({
     q: "",
     status: "",
-    role: "",
     company: "",
-    location: "",
+    city: "",
   });
 
-  // Pagination
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
 
-  // Small UX: copy toast
   const [copiedMsg, setCopiedMsg] = useState("");
 
   const queryString = useMemo(() => {
@@ -42,9 +36,8 @@ export default function App() {
       week,
       q: applied.q,
       status: applied.status,
-      role: applied.role,
       company_name: applied.company,
-      company_location: applied.location,
+      city: applied.city,
       limit,
       offset,
     });
@@ -57,7 +50,7 @@ export default function App() {
       const data = await apiGet("/weeks");
       const list = data.weeks || [];
       setWeeks(list);
-      if (!week && list.length) setWeek(list[0]); // latest
+      if (!week && list.length) setWeek(list[0]);
     } catch (e) {
       setError(String(e.message || e));
     } finally {
@@ -103,13 +96,11 @@ export default function App() {
   }
 
   function applyFilters() {
-    // snapshot current inputs to applied filters
     setApplied({
       q: q.trim(),
       status,
-      role: role.trim(),
       company: company.trim(),
-      location: location.trim(),
+      city: city.trim(),
     });
     setOffset(0);
   }
@@ -117,10 +108,9 @@ export default function App() {
   function clearFilters() {
     setQ("");
     setStatus("");
-    setRole("");
     setCompany("");
-    setLocation("");
-    setApplied({ q: "", status: "", role: "", company: "", location: "" });
+    setCity("");
+    setApplied({ q: "", status: "", company: "", city: "" });
     setOffset(0);
   }
 
@@ -129,18 +119,17 @@ export default function App() {
       week,
       q: applied.q,
       status: applied.status,
-      role: applied.role,
       company_name: applied.company,
-      company_location: applied.location,
+      city: applied.city,
     });
     const base = import.meta.env.VITE_API_BASE_URL;
     window.open(`${base}/signals/export?${exportQS}`, "_blank");
   }
 
-  async function copyEmail(email) {
+  async function copyText(text) {
     try {
-      await navigator.clipboard.writeText(email);
-      setCopiedMsg(`Copied: ${email}`);
+      await navigator.clipboard.writeText(text);
+      setCopiedMsg(`Copied: ${text}`);
       setTimeout(() => setCopiedMsg(""), 1200);
     } catch {
       setCopiedMsg("Copy failed");
@@ -148,38 +137,31 @@ export default function App() {
     }
   }
 
-  // initial
   useEffect(() => {
     loadWeeks().catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // when week changes
   useEffect(() => {
     if (!week) return;
     loadSummary(week).catch(console.error);
     setOffset(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week]);
 
-  // load signals when queryString changes (week/applied/offset)
   useEffect(() => {
     loadSignals().catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryString]);
 
   const isApplyDirty =
-    (q.trim() !== applied.q) ||
-    (status !== applied.status) ||
-    (role.trim() !== applied.role) ||
-    (company.trim() !== applied.company) ||
-    (location.trim() !== applied.location);
+    q.trim() !== applied.q ||
+    status !== applied.status ||
+    company.trim() !== applied.company ||
+    city.trim() !== applied.city;
 
   const hasAnyFilter =
-    !!applied.q || !!applied.status || !!applied.role || !!applied.company || !!applied.location;
+    !!applied.q || !!applied.status || !!applied.company || !!applied.city;
 
   return (
-    <div style={{ padding: 16, fontFamily: "Arial", maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ padding: 16, fontFamily: "Arial", maxWidth: 1300, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Agent2 Dashboard</h2>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -201,7 +183,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Week Selector */}
       <div style={{ margin: "12px 0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label><b>Week:</b></label>
         <select value={week} onChange={(e) => setWeek(e.target.value)} disabled={loadingWeeks}>
@@ -212,7 +193,6 @@ export default function App() {
         {loadingWeeks && <span>Loading weeks...</span>}
       </div>
 
-      {/* Weekly Summary Card */}
       <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Weekly Summary</h3>
         {loadingSummary ? (
@@ -226,23 +206,32 @@ export default function App() {
             <div><b>Valid:</b> {summary.valid_rows_processed}</div>
             <div><b>Skipped:</b> {summary.invalid_rows_skipped}</div>
             <div><b>Signals:</b> {summary.signals_count}</div>
-            <div><b>Status:</b> {summary.run_status}</div>
+            <div><b>Status:</b> {summary.run_status || summary.status || "success"}</div>
           </div>
         )}
       </div>
 
-      {/* Filters */}
       <div style={{ border: "1px solid #eee", padding: 12, borderRadius: 10, marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input style={{ minWidth: 220 }} placeholder="Search (q)" value={q} onChange={(e) => setQ(e.target.value)} />
-          <input placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
-          <input placeholder="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
-          <input placeholder="Location" value={location} onChange={(e) => setLocation(e.target.value)} />
+          <input
+            style={{ minWidth: 220 }}
+            placeholder="Search (name/company/city/url)"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <input
+            placeholder="Company"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+          />
+          <input
+            placeholder="City"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+          />
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All Status</option>
             <option value="company changed">company changed</option>
-            <option value="role changed">role changed</option>
-            <option value="role and company changed">role and company changed</option>
           </select>
 
           <button onClick={applyFilters} disabled={!isApplyDirty || loadingSignals}>
@@ -265,27 +254,27 @@ export default function App() {
         </div>
       </div>
 
-      {/* Table Header */}
       <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div><b>Total:</b> {total}</div>
       </div>
 
-      {/* Table */}
       <div style={{ border: "1px solid #ddd", borderRadius: 10, overflow: "auto", maxHeight: 520 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
             <tr>
-              <th style={thStyle}>Email</th>
-              <th style={thStyle}>Company (Location)</th>
-              <th style={thStyle}>Position</th>
+              <th style={thStyle}>Name</th>
+              <th style={thStyle}>Past Company URL</th>
+              <th style={thStyle}>Past Company</th>
+              <th style={thStyle}>New Company</th>
+              <th style={thStyle}>Company (City)</th>
               <th style={thStyle}>Status</th>
             </tr>
           </thead>
           <tbody>
             {loadingSignals ? (
-              <tr><td style={tdStyle} colSpan="4">Loading signals...</td></tr>
+              <tr><td style={tdStyle} colSpan="6">Loading signals...</td></tr>
             ) : !signals.length ? (
-              <tr><td style={tdStyle} colSpan="4">No signals found for the selected filters.</td></tr>
+              <tr><td style={tdStyle} colSpan="6">No signals found for the selected filters.</td></tr>
             ) : (
               signals.map((row, idx) => (
                 <tr
@@ -294,15 +283,24 @@ export default function App() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#fafafa")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  <td
-                    style={{ ...tdStyle, color: "#0b57d0", cursor: "pointer" }}
-                    title="Click to copy"
-                    onClick={() => copyEmail(row["Email"])}
-                  >
-                    {row["Email"]}
-                  </td>
-                  <td style={tdStyle}>{row["Company (Location)"]}</td>
-                  <td style={tdStyle}>{row["Position"]}</td>
+                  <td style={tdStyle}>{row["Name"]}</td>
+                  <td style={tdStyle}>
+                  {row["Past Company URL"] ? (
+                    <a
+                      href={row["Past Company URL"]}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#0b57d0", textDecoration: "underline" }}
+                    >
+                      {row["Past Company URL"]}
+                    </a>
+                  ) : (
+                    ""
+                  )}
+                </td>
+                  <td style={tdStyle}>{row["Past Company"]}</td>
+                  <td style={tdStyle}>{row["New Company"]}</td>
+                  <td style={tdStyle}>{row["Company (City)"]}</td>
                   <td style={tdStyle}>{row["Status"]}</td>
                 </tr>
               ))
@@ -311,7 +309,6 @@ export default function App() {
         </table>
       </div>
 
-      {/* Pagination */}
       <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
         <button
           disabled={offset === 0 || loadingSignals}
@@ -345,6 +342,7 @@ const tdStyle = {
   borderBottom: "1px solid #eee",
   fontSize: 13,
   verticalAlign: "top",
+  wordBreak: "break-word",
 };
 
 const rowStyle = {
