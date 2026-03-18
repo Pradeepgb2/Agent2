@@ -11,3 +11,5 @@ logs/**
 node_modules/
 dist/
 .env.docker
+urls.csv
+test.ipynb
