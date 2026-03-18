@@ -4,10 +4,12 @@ import json
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import re
+
 from worker.b_ingest import run_ingestion
 from worker.b_compare import run_comparison
-import re
-from typing import List, Tuple
+from worker.s3_utils import upload_file
+
 # Load .env only for local runs (optional in Docker)
 if Path(".env").exists():
     load_dotenv()
@@ -19,6 +21,7 @@ RAW_PATH = os.getenv("DATA_RAW_PATH", str(Path(DATA_ROOT) / "raw"))
 SIGNALS_PATH = os.getenv("DATA_SIGNALS_PATH", str(Path(DATA_ROOT) / "signals"))
 RUNS_PATH = os.getenv("DATA_RUNS_PATH", str(Path(DATA_ROOT) / "runs"))
 LOG_PATH = os.getenv("LOG_PATH", LOG_ROOT)
+
 os.makedirs(RAW_PATH, exist_ok=True)
 os.makedirs(SIGNALS_PATH, exist_ok=True)
 os.makedirs(RUNS_PATH, exist_ok=True)
@@ -32,6 +35,7 @@ logging.basicConfig(
 
 DATE_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
+
 def _extract_date(filename: str):
     m = DATE_PATTERN.search(filename)
     if not m:
@@ -40,6 +44,7 @@ def _extract_date(filename: str):
         return datetime.strptime(m.group(1), "%Y-%m-%d")
     except ValueError:
         return None
+
 
 def enforce_retention(folder: str, prefix: str, keep_count: int):
     p = Path(folder)
@@ -62,13 +67,31 @@ def enforce_retention(folder: str, prefix: str, keep_count: int):
             logging.info(f"Retention deleted: {f}")
         except Exception as e:
             logging.warning(f"Retention failed deleting {f}: {e}")
-            
+
+
+def write_run_summary(summary: dict, runs_path: str) -> str:
+    """
+    Writes run summary JSON to /data/runs/run_summary_YYYY-MM-DD.json
+    Returns the file path as string.
+    """
+    Path(runs_path).mkdir(parents=True, exist_ok=True)
+
+    week_present = summary.get("week_present", datetime.now().strftime("%Y-%m-%d"))
+    out_path = Path(runs_path) / f"run_summary_{week_present}.json"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    return str(out_path)
+
+
 def run():
     print("Using paths:")
     print(" RAW_PATH:", RAW_PATH)
     print(" SIGNALS_PATH:", SIGNALS_PATH)
     print(" RUNS_PATH:", RUNS_PATH)
     print(" LOG_PATH:", LOG_PATH)
+
     start_time = datetime.now()
     logging.info("Pipeline started")
     print("Pipeline started")
@@ -101,42 +124,32 @@ def run():
         logging.info(f"Pipeline duration: {duration_seconds} seconds")
 
         # -------------------------
-        # Build Run Summary (for Summary Card)
+        # Build Run Summary
         # -------------------------
         week_present = None
         week_past = None
 
-        # Try to take week info from comparison first, else ingestion, else today
         if comparison_result and comparison_result.get("week_present"):
             week_present = comparison_result.get("week_present")
             week_past = comparison_result.get("week_past")
         elif ingestion_result and ingestion_result.get("week_label"):
+            # ingestion returns timestamp with time; summary filename can still use it,
+            # but compare normally supplies the clean YYYY-MM-DD week label
             week_present = ingestion_result.get("week_label")
 
         if not week_present:
             week_present = datetime.now().strftime("%Y-%m-%d")
 
-        # Counts (safe defaults)
         signals_count = int(comparison_result.get("signals_count", 0)) if comparison_result else 0
         company_change_count = int(comparison_result.get("company_change_count", 0)) if comparison_result else 0
         role_change_count = int(comparison_result.get("role_change_count", 0)) if comparison_result else 0
         both_change_count = int(comparison_result.get("role_and_company_change_count", 0)) if comparison_result else 0
 
-        # Row counts (you’ll fill these properly once ingestion returns them)
-        # For now, store placeholders or 0
-        total_rows_fetched = comparison_result.get("total_rows_fetched", 0)
-        valid_rows_processed = comparison_result.get("valid_rows_processed", 0)
-        invalid_rows_skipped = comparison_result.get("invalid_rows_skipped", 0)
-        skipped_reason_counts = comparison_result.get("skipped_reason_counts", {})
+        total_rows_fetched = comparison_result.get("total_rows_fetched", 0) if comparison_result else 0
+        valid_rows_processed = comparison_result.get("valid_rows_processed", 0) if comparison_result else 0
+        invalid_rows_skipped = comparison_result.get("invalid_rows_skipped", 0) if comparison_result else 0
+        skipped_reason_counts = comparison_result.get("skipped_reason_counts", {}) if comparison_result else {}
 
-        # If you later return these from ingestion/compare, plug them here.
-        # Example:
-        # total_rows_fetched = ingestion_result.get("total_rows_fetched", 0)
-        # valid_rows_processed = ingestion_result.get("valid_rows_processed", 0)
-        # invalid_rows_skipped = ingestion_result.get("invalid_rows_skipped", 0)
-        # skipped_reason_counts = ingestion_result.get("skipped_reason_counts", {})
-
-        # Partial success rule (based on skipped rows percentage)
         if run_status == "success" and total_rows_fetched > 0:
             skipped_ratio = invalid_rows_skipped / total_rows_fetched
             if skipped_ratio > 0.30:
@@ -159,33 +172,21 @@ def run():
             "duration_seconds": duration_seconds,
             "error_message": error_message,
         }
-        # Raw: keep 5 weeks
+
+        # Retention
         enforce_retention(RAW_PATH, "employees_linkedin_data_", keep_count=5)
-
-        # Signals: keep 8 weeks
         enforce_retention(SIGNALS_PATH, "employee_changes_report_", keep_count=8)
-
-        # Run summaries: keep 8 weeks
         enforce_retention(RUNS_PATH, "run_summary_", keep_count=8)
 
+        # Write summary locally
         summary_path = write_run_summary(run_summary, RUNS_PATH)
+
+        # Upload summary to S3
+        upload_file(str(summary_path), f"runs/{Path(summary_path).name}")
+
         logging.info(f"Run summary written to: {summary_path}")
         print(f"Run summary written to: {summary_path}")
 
-def write_run_summary(summary: dict, runs_path: str) -> str:
-    """
-    Writes run summary JSON to /data/runs/run_summary_YYYY-MM-DD.json
-    Returns the file path as string.
-    """
-    Path(runs_path).mkdir(parents=True, exist_ok=True)
-
-    week_present = summary.get("week_present", datetime.now().strftime("%Y-%m-%d"))
-    out_path = Path(runs_path) / f"run_summary_{week_present}.json"
-
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-
-    return str(out_path)
 
 if __name__ == "__main__":
     run()

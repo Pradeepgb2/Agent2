@@ -7,6 +7,8 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 
+from worker.s3_utils import upload_file
+
 
 def extract_company_details(value):
     """
@@ -66,9 +68,9 @@ def clean_headers(columns):
     cleaned = []
     for c in columns:
         c = str(c)
-        c = c.replace("\ufeff", "")   # BOM
-        c = c.replace("\u200b", "")   # zero-width space
-        c = c.replace("\xa0", " ")    # non-breaking space
+        c = c.replace("\ufeff", "")
+        c = c.replace("\u200b", "")
+        c = c.replace("\xa0", " ")
         c = c.strip()
         c = c.strip('"').strip("'")
         cleaned.append(c)
@@ -280,6 +282,9 @@ def run_comparison():
     signals_output_path = SIGNALS_DIR / signals_output_filename
     signals_df.to_csv(signals_output_path, index=False)
 
+    # Upload detailed signals file to S3
+    upload_file(str(signals_output_path), f"signals/{signals_output_filename}")
+
     changed_rows["Company (City)"] = (
         changed_rows["company_name_old"].fillna("Unknown")
         + " ("
@@ -309,9 +314,12 @@ def run_comparison():
         .reset_index(drop=True)
     )
 
-    report_output_filename = f"employee_changes_report_{datetime.now().strftime('%Y-%m-%d')}.csv"
+    report_output_filename = f"employee_changes_report_{week_present}.csv"
     report_output_path = SIGNALS_DIR / report_output_filename
     report_df.to_csv(report_output_path, index=False)
+
+    # Upload report file to S3
+    upload_file(str(report_output_path), f"signals/{report_output_filename}")
 
     company_change_count = int(len(signals_df))
 
