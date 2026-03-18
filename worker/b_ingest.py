@@ -95,7 +95,7 @@ def wait_for_snapshot_ready(snapshot_id: str):
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def download_snapshot_csv(snapshot_id: str):
+def download_snapshot_csv(snapshot_id):
     headers = {
         "Authorization": f"Bearer {API_TOKEN}",
     }
@@ -106,25 +106,51 @@ def download_snapshot_csv(snapshot_id: str):
     timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H_%M_%S")
     new_path = raw_dir / f"employees_linkedin_data_{timestamp}.csv"
 
-    print(new_path)
-    print(f"[DOWNLOAD] Downloading CSV for snapshot {snapshot_id} ...")
+    max_attempts = 10
+    retry_wait_seconds = 30
 
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
+    for attempt in range(1, max_attempts + 1):
+        print(f"[DOWNLOAD] Attempt {attempt}/{max_attempts} for snapshot {snapshot_id} ...")
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
 
-    with open(new_path, "wb") as f:
-        f.write(response.content)
+        content_type = response.headers.get("Content-Type", "")
+        text_preview = response.text[:200].strip()
 
-    print(f"[DOWNLOAD] Saved CSV to: {new_path}")
+        # Case 1: Bright Data still says building
+        if text_preview.startswith("{") and "building" in text_preview.lower():
+            print(f"[DOWNLOAD] Snapshot still building. Waiting {retry_wait_seconds}s...")
+            time.sleep(retry_wait_seconds)
+            continue
 
-    # Upload raw file to S3
-    upload_file(str(new_path), f"raw/{new_path.name}")
+        # Case 2: looks like JSON status/error instead of CSV
+        if "application/json" in content_type.lower():
+            try:
+                data = response.json()
+                status = data.get("status", "").lower()
+                if status in ["building", "running", "pending"]:
+                    print(f"[DOWNLOAD] Snapshot status={status}. Waiting {retry_wait_seconds}s...")
+                    time.sleep(retry_wait_seconds)
+                    continue
+                raise RuntimeError(f"Unexpected JSON response while downloading snapshot: {data}")
+            except Exception:
+                raise RuntimeError(f"Snapshot download returned JSON instead of CSV: {text_preview}")
 
-    return {
-        "status": "success",
-        "file_path": str(new_path),
-        "week_label": timestamp,
-    }
+        # Case 3: assume valid CSV
+        with open(new_path, "wb") as f:
+            f.write(response.content)
+
+        print(f"[DOWNLOAD] Saved CSV to: {new_path}")
+
+        upload_file(str(new_path), f"raw/{new_path.name}")
+
+        return {
+            "status": "success",
+            "file_path": str(new_path),
+            "week_label": str(timestamp)
+        }
+
+    raise TimeoutError(f"Snapshot {snapshot_id} did not become downloadable CSV after {max_attempts} attempts.")
 
 
 def run_ingestion():
