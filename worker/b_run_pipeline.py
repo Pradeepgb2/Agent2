@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 import re
+from worker.db_utils import create_tables, insert_pipeline_run
 
 from worker.b_ingest import run_ingestion
 from worker.b_compare import run_comparison
@@ -86,6 +87,7 @@ def write_run_summary(summary: dict, runs_path: str) -> str:
 
 
 def run():
+    create_tables()
     print("Using paths:")
     print(" RAW_PATH:", RAW_PATH)
     print(" SIGNALS_PATH:", SIGNALS_PATH)
@@ -183,7 +185,7 @@ def run():
 
         # Upload summary to S3
         upload_file(str(summary_path), f"runs/{Path(summary_path).name}")
-
+        insert_pipeline_run(run_summary)
         logging.info(f"Run summary written to: {summary_path}")
         print(f"Run summary written to: {summary_path}")
 

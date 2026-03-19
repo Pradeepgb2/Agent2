@@ -10,6 +10,10 @@ services:
       - ./logs:/logs
     env_file:
       - .env.docker
+    depends_on:
+      - postgres
+    networks:
+      - agent2_net
 
   worker:
     build:
@@ -20,5 +24,31 @@ services:
       - ./logs:/logs
     env_file:
       - .env.docker
+    depends_on:
+      - postgres
     profiles: ["manual"]
     command: ["python", "-m", "worker.b_run_pipeline"]
+    networks:
+      - agent2_net
+
+  postgres:
+    image: postgres:16
+    container_name: agent2-postgres
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      agent2_net:
+        aliases:
+          - postgres
+
+volumes:
+  postgres_data:
+
+networks:
+  agent2_net:
+    driver: bridge
