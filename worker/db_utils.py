@@ -104,3 +104,42 @@ def insert_pipeline_run(run_summary: dict):
     conn.commit()
     cur.close()
     conn.close()
+def insert_signals(signals_df):
+    if signals_df is None or signals_df.empty:
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    for _, row in signals_df.iterrows():
+        cur.execute("""
+            INSERT INTO signals (
+                linkedin_id,
+                name,
+                past_company,
+                past_company_url,
+                new_company,
+                new_company_url,
+                city,
+                signal_type,
+                week_past,
+                week_present,
+                detected_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            row.get("linkedin_id"),
+            row.get("name"),
+            row.get("past_company"),
+            row.get("past_company_url"),
+            row.get("new_company"),
+            row.get("new_company_url"),
+            row.get("city"),
+            row.get("signal_type"),
+            row.get("week_past"),
+            row.get("week_present"),
+            row.get("detected_at"),
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()

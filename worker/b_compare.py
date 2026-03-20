@@ -339,6 +339,7 @@ def run_comparison():
         "skipped_reason_counts": skipped_reason_counts,
         "old_rows_skipped": old_skipped,
         "new_rows_skipped": new_skipped,
+        "signals_df": signals_df,
     }
 
 
