@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from backend.db_utils import get_connection
 
 load_dotenv()
 
@@ -63,17 +64,22 @@ def root():
 
 
 def _get_available_weeks() -> list[str]:
-    signals_dir = Path(SIGNALS_PATH)
-    if not signals_dir.exists():
-        return []
+    conn = get_connection()
+    cur = conn.cursor()
 
-    weeks = []
-    for f in signals_dir.glob("employee_changes_report_*.csv"):
-        m = DATE_PATTERN.search(f.name)
-        if m:
-            weeks.append(m.group(1))
+    cur.execute("""
+        SELECT DISTINCT week_present
+        FROM pipeline_runs
+        WHERE week_present IS NOT NULL
+        ORDER BY week_present DESC
+    """)
 
-    return sorted(set(weeks), reverse=True)
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return [row["week_present"] for row in rows]
 
 
 def _get_latest_week() -> str | None:
@@ -91,17 +97,34 @@ def weeks(_: bool = Depends(require_basic_auth)):
 
 @app.get("/runs/summary")
 def runs_summary(week: str | None = None, _: bool = Depends(require_basic_auth)):
-    if not week:
-        week = _get_latest_week()
-        if not week:
-            raise HTTPException(status_code=404, detail="No weeks found")
+    conn = get_connection()
+    cur = conn.cursor()
 
-    summary_file = Path(RUNS_PATH) / f"run_summary_{week}.json"
-    if not summary_file.exists():
-        raise HTTPException(status_code=404, detail=f"No run summary found for week {week}")
+    if week:
+        cur.execute("""
+            SELECT *
+            FROM pipeline_runs
+            WHERE week_present = %s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (week,))
+    else:
+        cur.execute("""
+            SELECT *
+            FROM pipeline_runs
+            ORDER BY week_present DESC, id DESC
+            LIMIT 1
+        """)
 
-    with open(summary_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No run summary found")
+
+    return row
 
 
 @app.get("/signals")
@@ -115,49 +138,79 @@ def signals(
     offset: int = 0,
     _: bool = Depends(require_basic_auth),
 ):
-    if not week:
-        week = _get_latest_week()
-        if not week:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    filters = []
+    values = []
+
+    if week:
+        filters.append("week_present = %s")
+        values.append(week)
+    else:
+        latest_week = _get_latest_week()
+        if not latest_week:
             raise HTTPException(status_code=404, detail="No weeks found")
-
-    signals_file = Path(SIGNALS_PATH) / f"employee_changes_report_{week}.csv"
-    if not signals_file.exists():
-        raise HTTPException(status_code=404, detail=f"No signals file found for week {week}")
-
-    df = pd.read_csv(signals_file, dtype="string").fillna("")
-
-    def contains(series: pd.Series, text: str) -> pd.Series:
-        return series.astype("string").str.lower().str.contains(text.lower(), na=False)
-
-    if q:
-        mask = (
-            contains(df["Name"], q)
-            | contains(df["Past Company URL"], q)
-            | contains(df["Past Company"], q)
-            | contains(df["New Company"], q)
-            | contains(df["Company (City)"], q)
-            | contains(df["Status"], q)
-        )
-        df = df[mask]
+        filters.append("week_present = %s")
+        values.append(latest_week)
+        week = latest_week
 
     if status:
-        df = df[contains(df["Status"], status)]
+        filters.append("signal_type ILIKE %s")
+        values.append(f"%{status}%")
 
     if company_name:
-        df = df[contains(df["Past Company"], company_name) | contains(df["New Company"], company_name)]
+        filters.append("(past_company ILIKE %s OR new_company ILIKE %s)")
+        values.extend([f"%{company_name}%", f"%{company_name}%"])
 
     if city:
-        df = df[contains(df["Company (City)"], city)]
+        filters.append("city ILIKE %s")
+        values.append(f"%{city}%")
 
-    total = len(df)
-    df_page = df.iloc[offset: offset + limit].copy()
+    if q:
+        filters.append("""
+            (
+                name ILIKE %s OR
+                past_company ILIKE %s OR
+                new_company ILIKE %s OR
+                city ILIKE %s OR
+                past_company_url ILIKE %s
+            )
+        """)
+        values.extend([f"%{q}%"] * 5)
+
+    where_clause = " AND ".join(filters) if filters else "TRUE"
+
+    count_sql = f"SELECT COUNT(*) AS total FROM signals WHERE {where_clause}"
+    cur.execute(count_sql, values)
+    total = cur.fetchone()["total"]
+
+    data_sql = f"""
+        SELECT
+            name AS "Name",
+            past_company_url AS "Past Company URL",
+            past_company AS "Past Company",
+            new_company AS "New Company",
+            CONCAT(COALESCE(past_company, 'Unknown'), ' (', COALESCE(city, 'Unknown'), ')') AS "Company (City)",
+            'company changed' AS "Status"
+        FROM signals
+        WHERE {where_clause}
+        ORDER BY detected_at DESC
+        LIMIT %s OFFSET %s
+    """
+
+    cur.execute(data_sql, values + [limit, offset])
+    items = cur.fetchall()
+
+    cur.close()
+    conn.close()
 
     return {
         "week": week,
         "total": total,
-        "items": df_page.to_dict(orient="records"),
+        "items": items,
     }
-
+    
 
 @app.get("/signals/export")
 def signals_export(
