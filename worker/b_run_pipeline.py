@@ -179,9 +179,9 @@ def run():
         }
 
         # Retention
-        enforce_retention(RAW_PATH, "employees_linkedin_data_", keep_count=5)
-        enforce_retention(SIGNALS_PATH, "employee_changes_report_", keep_count=8)
-        enforce_retention(RUNS_PATH, "run_summary_", keep_count=8)
+        enforce_retention(RAW_PATH, "employees_linkedin_data_", keep_count=2)
+        enforce_retention(SIGNALS_PATH, "employee_changes_report_", keep_count=4)
+        enforce_retention(RUNS_PATH, "run_summary_", keep_count=4)
 
         # Write summary locally
         summary_path = write_run_summary(run_summary, RUNS_PATH)
