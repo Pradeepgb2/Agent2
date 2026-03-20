@@ -6,6 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import re
 from worker.db_utils import create_tables, insert_pipeline_run
+from worker.db_utils import create_tables, insert_pipeline_run, insert_signals
 
 from worker.b_ingest import run_ingestion
 from worker.b_compare import run_comparison
@@ -110,6 +111,8 @@ def run():
 
         # Step 2: Comparison
         comparison_result = run_comparison()
+        if comparison_result and comparison_result.get("signals_df") is not None:
+            insert_signals(comparison_result["signals_df"])
 
         run_status = "success"
         logging.info("Pipeline completed successfully")
