@@ -30,7 +30,7 @@ jobs:
           python -c "from backend.main import app; print('Backend import successful')"
       - name: Check worker import
         run: |
-          python -c "from worker.run_pipeline import run; print('Worker import successful')"
+          python -c "from worker.b_run_pipeline import run; print('Worker import successful')"
       # Frontend build check
       - name: Set up Node.js
         uses: actions/setup-node@v4
