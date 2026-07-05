@@ -12,7 +12,6 @@ load_dotenv()
 # ================== PATHS ==================
 input_dir = Path(os.getenv("BD_INPUT_PATH", "/data/input"))
 raw_dir = Path(os.getenv("BD_RAW_PATH", "/data/raw"))
-raw_dir.mkdir(parents=True, exist_ok=True)
 
 # ================== CONFIGURATION ==================
 API_TOKEN = os.getenv("BRIGHTDATA_API")
@@ -96,6 +95,7 @@ def wait_for_snapshot_ready(snapshot_id: str):
 
 
 def download_snapshot_csv(snapshot_id):
+    raw_dir.mkdir(parents=True, exist_ok=True)
     headers = {
         "Authorization": f"Bearer {API_TOKEN}",
     }
