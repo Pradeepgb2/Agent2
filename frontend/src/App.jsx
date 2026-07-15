@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, buildQuery } from "./api";
+import "./App.css";
+
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard", icon: "\u25A4" },
+  { key: "signals", label: "Signals", icon: "\u2261" },
+  { key: "export-history", label: "Export History", icon: "\u25A2" },
+  { key: "settings", label: "Settings", icon: "\u2699" },
+];
+
+function ComingSoon({ label }) {
+  return (
+    <div className="placeholder">
+      <h2>{label}</h2>
+      <p>This page is coming soon.</p>
+    </div>
+  );
+}
 
 export default function App() {
+  const [page, setPage] = useState("dashboard");
+
   const [weeks, setWeeks] = useState([]);
   const [week, setWeek] = useState("");
   const [summary, setSummary] = useState(null);
@@ -126,17 +145,6 @@ export default function App() {
     window.open(`${base}/signals/export?${exportQS}`, "_blank");
   }
 
-  async function copyText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedMsg(`Copied: ${text}`);
-      setTimeout(() => setCopiedMsg(""), 1200);
-    } catch {
-      setCopiedMsg("Copy failed");
-      setTimeout(() => setCopiedMsg(""), 1200);
-    }
-  }
-
   useEffect(() => {
     loadWeeks().catch(console.error);
   }, []);
@@ -160,191 +168,207 @@ export default function App() {
   const hasAnyFilter =
     !!applied.q || !!applied.status || !!applied.company || !!applied.city;
 
+  const pageLabel = NAV_ITEMS.find((n) => n.key === page)?.label || "Dashboard";
+
   return (
-    <div style={{ padding: 16, fontFamily: "Arial", maxWidth: 1300, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Agent2 Dashboard</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={refreshAll} disabled={!week || loadingSummary || loadingSignals}>
-            Refresh
-          </button>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <h1>Agent2</h1>
+          <p>Recruiting Intelligence Platform</p>
         </div>
-      </div>
-
-      {error && (
-        <div style={{ margin: "12px 0", padding: 10, border: "1px solid #f99", borderRadius: 8 }}>
-          <b>Error:</b> {error}
-        </div>
-      )}
-
-      {copiedMsg && (
-        <div style={{ margin: "12px 0", padding: 10, border: "1px solid #9f9", borderRadius: 8 }}>
-          {copiedMsg}
-        </div>
-      )}
-
-      <div style={{ margin: "12px 0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label><b>Week:</b></label>
-        <select value={week} onChange={(e) => setWeek(e.target.value)} disabled={loadingWeeks}>
-          {weeks.map((w) => (
-            <option key={w} value={w}>{w}</option>
+        <ul className="nav-list">
+          {NAV_ITEMS.map((item) => (
+            <li
+              key={item.key}
+              className={`nav-item ${page === item.key ? "active" : ""}`}
+              onClick={() => setPage(item.key)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </li>
           ))}
-        </select>
-        {loadingWeeks && <span>Loading weeks...</span>}
-      </div>
+        </ul>
+      </aside>
 
-      <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Weekly Summary</h3>
-        {loadingSummary ? (
-          <div>Loading summary...</div>
-        ) : !summary ? (
-          <div>No summary available for this week.</div>
-        ) : (
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            <div><b>Week:</b> {summary.week_present}</div>
-            <div><b>Total Rows:</b> {summary.total_rows_fetched}</div>
-            <div><b>Valid:</b> {summary.valid_rows_processed}</div>
-            <div><b>Skipped:</b> {summary.invalid_rows_skipped}</div>
-            <div><b>Signals:</b> {summary.signals_count}</div>
-            <div><b>Status:</b> {summary.run_status || summary.status || "success"}</div>
-          </div>
-        )}
-      </div>
-
-      <div style={{ border: "1px solid #eee", padding: 12, borderRadius: 10, marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input
-            style={{ minWidth: 220 }}
-            placeholder="Search (name/company/city/url)"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <input
-            placeholder="Company"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-          />
-          <input
-            placeholder="City"
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-          />
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All Status</option>
-            <option value="company changed">company changed</option>
-          </select>
-
-          <button onClick={applyFilters} disabled={!isApplyDirty || loadingSignals}>
-            Apply
-          </button>
-
-          <button onClick={clearFilters} disabled={!hasAnyFilter && !isApplyDirty}>
-            Clear
-          </button>
-
-          <button onClick={onExport} disabled={loadingSignals}>
-            Export CSV
-          </button>
-
-          {hasAnyFilter && (
-            <span style={{ fontSize: 12, opacity: 0.8 }}>
-              Filters applied
-            </span>
-          )}
+      <main className="main-content">
+        <div className="topbar">
+          <h2 className="topbar-title">{pageLabel}</h2>
+          <div className="avatar">R</div>
         </div>
-      </div>
 
-      <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div><b>Total:</b> {total}</div>
-      </div>
+        {error && <div className="banner banner-error"><b>Error:</b> {error}</div>}
+        {copiedMsg && <div className="banner banner-success">{copiedMsg}</div>}
 
-      <div style={{ border: "1px solid #ddd", borderRadius: 10, overflow: "auto", maxHeight: 520 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
-            <tr>
-              <th style={thStyle}>Name</th>
-              <th style={thStyle}>Past Company URL</th>
-              <th style={thStyle}>Past Company</th>
-              <th style={thStyle}>New Company</th>
-              <th style={thStyle}>Company (City)</th>
-              <th style={thStyle}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loadingSignals ? (
-              <tr><td style={tdStyle} colSpan="6">Loading signals...</td></tr>
-            ) : !signals.length ? (
-              <tr><td style={tdStyle} colSpan="6">No signals found for the selected filters.</td></tr>
-            ) : (
-              signals.map((row, idx) => (
-                <tr
-                  key={idx}
-                  style={rowStyle}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fafafa")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <td style={tdStyle}>{row["Name"]}</td>
-                  <td style={tdStyle}>
-                  {row["Past Company URL"] ? (
-                    <a
-                      href={row["Past Company URL"]}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: "#0b57d0", textDecoration: "underline" }}
-                    >
-                      {row["Past Company URL"]}
-                    </a>
-                  ) : (
-                    ""
-                  )}
-                </td>
-                  <td style={tdStyle}>{row["Past Company"]}</td>
-                  <td style={tdStyle}>{row["New Company"]}</td>
-                  <td style={tdStyle}>{row["Company (City)"]}</td>
-                  <td style={tdStyle}>{row["Status"]}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+        {page === "dashboard" && (
+          <>
+            <div className="stat-row">
+              <div className="stat-card">
+                <div className="stat-label">Total Rows</div>
+                <div className="stat-value blue">
+                  {loadingSummary ? "\u2026" : summary?.total_rows_fetched ?? "\u2013"}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Valid Rows</div>
+                <div className="stat-value green">
+                  {loadingSummary ? "\u2026" : summary?.valid_rows_processed ?? "\u2013"}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Skipped Rows</div>
+                <div className="stat-value orange">
+                  {loadingSummary ? "\u2026" : summary?.invalid_rows_skipped ?? "\u2013"}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Signals Found</div>
+                <div className="stat-value purple">
+                  {loadingSummary ? "\u2026" : summary?.signals_count ?? "\u2013"}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Run Status</div>
+                <div className="stat-status">
+                  <span className="status-dot" />
+                  {loadingSummary ? "\u2026" : (summary?.run_status || summary?.status || "success")}
+                </div>
+              </div>
+            </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
-        <button
-          disabled={offset === 0 || loadingSignals}
-          onClick={() => setOffset(Math.max(0, offset - limit))}
-        >
-          Prev
-        </button>
-        <button
-          disabled={offset + limit >= total || loadingSignals}
-          onClick={() => setOffset(offset + limit)}
-        >
-          Next
-        </button>
-        <span style={{ fontSize: 12, opacity: 0.8 }}>
-          Showing {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)} of {total}
-        </span>
-      </div>
+            <div className="meta-row">
+              <span>
+                <b>Week:</b>{" "}
+                <select value={week} onChange={(e) => setWeek(e.target.value)} disabled={loadingWeeks}>
+                  {weeks.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </span>
+              {loadingWeeks && <span>Loading weeks...</span>}
+              <button className="btn btn-outline" onClick={refreshAll} disabled={!week || loadingSummary || loadingSignals}>
+                Refresh
+              </button>
+            </div>
+
+            <div className="panel">
+              <div className="panel-header">
+                <h3 className="panel-title">Company Change Signals</h3>
+                <div className="panel-controls">
+                  <input
+                    className="input-sm"
+                    placeholder="Search (name/company/city/url)"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                  <input
+                    className="input-sm"
+                    placeholder="Company"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    style={{ minWidth: 120 }}
+                  />
+                  <input
+                    className="input-sm"
+                    placeholder="City"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    style={{ minWidth: 100 }}
+                  />
+                  <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                    <option value="">All Status</option>
+                    <option value="company changed">company changed</option>
+                  </select>
+                  <button className="btn btn-primary" onClick={applyFilters} disabled={!isApplyDirty || loadingSignals}>
+                    Apply
+                  </button>
+                  <button className="btn btn-outline" onClick={clearFilters} disabled={!hasAnyFilter && !isApplyDirty}>
+                    Clear
+                  </button>
+                  <button className="btn btn-dark" onClick={onExport} disabled={loadingSignals}>
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ padding: "10px 18px 0", fontSize: 12.5, color: "#6b7280" }}>
+                <b style={{ color: "#1a2233" }}>Total:</b> {total}
+                {hasAnyFilter && <span style={{ marginLeft: 10 }}>Filters applied</span>}
+              </div>
+
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Past Company URL</th>
+                      <th>Past Company</th>
+                      <th>New Company</th>
+                      <th>Company (City)</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingSignals ? (
+                      <tr><td colSpan="6">Loading signals...</td></tr>
+                    ) : !signals.length ? (
+                      <tr><td colSpan="6">No signals found for the selected filters.</td></tr>
+                    ) : (
+                      signals.map((row, idx) => (
+                        <tr key={idx}>
+                          <td className="cell-name">{row["Name"]}</td>
+                          <td>
+                            {row["Past Company URL"] ? (
+                              <a
+                                className="cell-link"
+                                href={row["Past Company URL"]}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {row["Past Company URL"]}
+                              </a>
+                            ) : (
+                              ""
+                            )}
+                          </td>
+                          <td className="cell-prev">{row["Past Company"]}</td>
+                          <td className="cell-new">{row["New Company"]}</td>
+                          <td>{row["Company (City)"]}</td>
+                          <td><span className="badge">{row["Status"]}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pagination-row">
+              <button
+                className="btn btn-outline"
+                disabled={offset === 0 || loadingSignals}
+                onClick={() => setOffset(Math.max(0, offset - limit))}
+              >
+                Prev
+              </button>
+              <button
+                className="btn btn-outline"
+                disabled={offset + limit >= total || loadingSignals}
+                onClick={() => setOffset(offset + limit)}
+              >
+                Next
+              </button>
+              <span className="pagination-info">
+                Showing {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)} of {total}
+              </span>
+            </div>
+          </>
+        )}
+
+        {page === "signals" && <ComingSoon label="Signals" />}
+        {page === "export-history" && <ComingSoon label="Export History" />}
+        {page === "settings" && <ComingSoon label="Settings" />}
+      </main>
     </div>
   );
 }
-
-const thStyle = {
-  textAlign: "left",
-  padding: 10,
-  borderBottom: "1px solid #ddd",
-  fontSize: 13,
-};
-
-const tdStyle = {
-  padding: 10,
-  borderBottom: "1px solid #eee",
-  fontSize: 13,
-  verticalAlign: "top",
-  wordBreak: "break-word",
-};
-
-const rowStyle = {
-  transition: "background 120ms ease",
-};
